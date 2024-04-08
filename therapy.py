@@ -1,25 +1,82 @@
-import re
 
 import tkinter as tk
-
 from tkinter import messagebox, filedialog
-
 import random
-
 from textblob import TextBlob
-
 import json
+import re
+
+class ChatbotLogic:
+    """Contains the logic for the chatbot."""
+
+    def __init__(self):
+        # Load responses from text files
+        self.greeting_responses = self.load_responses("greeting.txt")
+        self.positive_responses = self.load_responses("positive.txt")
+        self.negative_responses = self.load_responses("negative.txt")
+        self.neutral_responses = self.load_responses("neutral.txt")
+        with open("stopword.txt", "r") as file:
+            self.stopwords = set(word.strip().lower() for word in file)
+        self.meaningless_phrases = ["...", "???", "??", "blah", "hmm", "uh", "um", "idk", "lol", "huh", "@"]
+
+    def load_responses(self, filename):
+        """Load responses from a text file."""
+        with open(filename, "r") as file:
+            return file.readlines()
+
+    def generate_response(self, user_input):
+        """Generate a response based on the user input."""
+        sentiment = TextBlob(user_input).sentiment.polarity
+
+        if "addiction" in user_input:
+            return self.handle_addiction()
+        elif re.search(r"\b(die|kill|suicide)\b", user_input, re.IGNORECASE):
+            return self.handle_suicide()
+        elif re.search(r"\b(hi|hello|hey)\b", user_input, re.IGNORECASE):
+            return self.greeting()
+        else:
+            return self.analyze_sentiment(sentiment)
+
+    def handle_addiction(self):
+        """Handle user input related to addiction."""
+        return "Please provide more information about your addiction."
+
+    def handle_suicide(self):
+        """Handle user input related to suicide."""
+        result = messagebox.askquestion("Therapist", "Should I call the suicide control agency?")
+        return "I have contacted the suicide control agency. You'll be reached out to very soon." if result == "yes" else "Then be calm on yourself. Everything will surely be fine."
+
+    def greeting(self):
+        """Generate a random greeting."""
+        return random.choice(self.greeting_responses)
+
+    def analyze_sentiment(self, sentiment):
+        """Analyze sentiment of the user input and generate a response."""
+        if sentiment > 0.2:
+            return random.choice(self.positive_responses)
+        elif sentiment < -0.2:
+            return random.choice(self.negative_responses)
+        else:
+            return random.choice(self.neutral_responses)
+
+    def is_meaningless(self, user_input):
+        """Check if the user input is meaningless."""
+        cleaned_input = user_input.strip().lower()
+        words = cleaned_input.split()
+        return not cleaned_input or all(word in self.stopwords for word in words) or cleaned_input in self.meaningless_phrases
 
 
 class TherapyChatbot:
     """A simple chatbot program for providing therapy services."""
 
-
     def __init__(self, root):
         """Initialize the TherapyChatbot."""
         self.root = root
         self.root.title("Therapy ChatBot")
-        self.root.geometry("670x650")
+        self.root.geometry("650x650")
+
+        # Initialize ChatbotLogic
+        self.chatbot_logic = ChatbotLogic()
 
         # Placeholder for user profile data
         self.user_profile = {}
@@ -30,7 +87,6 @@ class TherapyChatbot:
         # Create GUI widgets
         self.create_widgets()
 
-    
     def create_widgets(self):
         """Create GUI widgets for the application."""
         # Create label widget for welcome message
@@ -110,17 +166,48 @@ class TherapyChatbot:
         if not self.validate_user_inputs(username, email, user_input):
             return
 
-        if self.is_meaningless(user_input):
+        if self.chatbot_logic.is_meaningless(user_input):
             self.display_message("Therapist: Please enter a meaningful message.")
             return 
 
-        response = self.generate_response(user_input)
+        response = self.chatbot_logic.generate_response(user_input)
 
         self.display_message(f"{username}: {user_input}")
         self.display_message(f"Therapist: {response}")
 
         self.update_conversation_history(username, user_input, "Therapist", response)
         self.clear_input_field()
+
+    def save_conversation(self):
+        """Save the conversation history to a JSON file."""
+        conversation_data = {"conversations": self.previous_conversations}
+        filename = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if filename:
+            with open(filename, "w") as file:
+                json.dump(conversation_data, file)
+            self.display_message(f"Conversation saved to {filename}")
+    
+    def load_conversation(self):
+        """Load conversation history from a JSON file."""
+        username = self.username_entry.get().strip().title()
+        email = self.email_entry.get().strip()
+        if not username or not email:
+            messagebox.showinfo("Therapy ChatBot", "Please enter both username and email.")
+            return
+
+        filename = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        if filename:
+            try:
+                with open(filename, "r") as file:
+                    conversation_data = json.load(file)
+                saved_conversations = conversation_data.get("conversations", [])
+                self.display_saved_conversations(saved_conversations, username, email)
+            except FileNotFoundError:
+                messagebox.showinfo("Therapy ChatBot", "No saved conversation logs found.")
+    
+    def clear_conversation(self):
+        """Clear the conversation history from the chat display."""
+        self.chat_display.delete(1.0, tk.END)
 
 
     def validate_user_inputs(self, username, email, user_input):
@@ -145,135 +232,7 @@ class TherapyChatbot:
         else:
             return True
 
-
-    def is_meaningless(self, user_input):
-        """Check if the user input is meaningless.
-
-        Args:
-            user_input (str): The message entered by the user.
-
-        Returns:
-            bool: True if the input is meaningless, False otherwise.
-        """
-        meaningless_phrases = ["...", "???", "??", "blah", "hmm", "uh", "um", "idk", "lol", "huh"]
-        with open("stopword.txt", "r") as file:
-            stopwords = set(word.strip().lower() for word in file)
-
-        cleaned_input = user_input.strip().lower()
-        words = cleaned_input.split()
-        return not cleaned_input or all(word in stopwords for word in words) or cleaned_input in meaningless_phrases
-
-
-    def generate_response(self, user_input):
-        """Generate a response based on the user input.
-
-        Args:
-            user_input (str): The message entered by the user.
-
-        Returns:
-            str: The response generated by the chatbot.
-        """
-        sentiment = TextBlob(user_input).sentiment.polarity
-
-        if "addiction" in user_input:
-            return self.handle_addiction()
-        elif re.search(r"\b(die|kill|suicide)\b", user_input, re.IGNORECASE):
-            return self.handle_suicide()
-        elif re.search(r"\b(hi|hello|hey)\b", user_input, re.IGNORECASE):
-            return self.greeting()
-        else:
-            return self.analyze_sentiment(sentiment)
-        
-
-    def handle_addiction(self):
-        """Handle user input related to addiction."""
-        return "Please provide more information about your addiction."
-    
-
-    def handle_suicide(self):
-        """Handle user input related to suicide."""
-        result = messagebox.askquestion("Therapist", "Should I call the suicide control agency?")
-        return "I have contacted the suicide control agency. You'll be reached out to very soon." if result == "yes" else "Then be calm on yourself. Everything will surely be fine."
-
-
-    def greeting(self):
-        """Generate a random greeting."""
-        with open("greeting.txt", "r") as file:
-            greeting_responses = file.readlines()
-            return random.choice(greeting_responses)
-
-
-    def analyze_sentiment(self, sentiment):
-        """Analyze sentiment of the user input and generate a response.
-
-        Args:
-            sentiment (float): The sentiment polarity of the user input.
-
-        Returns:
-            str: The response generated by the chatbot based on sentiment analysis.
-        """
-        with open("positive.txt", "r") as file:
-            positive_responses = file.readlines()
-
-        with open("neutral.txt", "r") as file:
-            neutral_responses = file.readlines()
-
-        with open("negative.txt", "r") as file:
-            negative_responses = file.readlines()
-
-        if sentiment > 0.2:
-            return random.choice(positive_responses)
-        elif sentiment < -0.2:
-            return random.choice(negative_responses)
-        else:
-            return random.choice(neutral_responses)
-
-
-    def save_conversation(self):
-        """Save the conversation history to a JSON file."""
-        conversation_data = {"conversations": self.previous_conversations}
-        filename = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
-        if filename:
-            with open(filename, "w") as file:
-                json.dump(conversation_data, file)
-            self.display_message(f"Conversation saved to {filename}")
-
-
-    def load_conversation(self):
-        """Load conversation history from a JSON file."""
-        username = self.username_entry.get().strip().title()
-        email = self.email_entry.get().strip()
-        if not username or not email:
-            messagebox.showinfo("Therapy ChatBot" ,"Please enter both username and email.")
-            return
-
-        filename = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
-        if filename:
-            try:
-                with open(filename, "r") as file:
-                    conversation_data = json.load(file)
-                saved_conversations = conversation_data.get("conversations", [])
-                self.display_saved_conversations(saved_conversations, username, email)
-            except FileNotFoundError:
-                messagebox.showinfo("Therapy ChatBot", "No saved conversation logs found.")
-
-
-    def display_saved_conversations(self, saved_conversations, username, email):
-        """Display saved conversations in the chat display."""
-        self.chat_display.delete(1.0, tk.END)
-        for conversation in saved_conversations:
-            if conversation[0] == username and conversation[1] == email:
-                self.chat_display.insert(tk.END, f"{conversation[0]}: {conversation[1]}\n")
-                self.chat_display.insert(tk.END, f"Therapist: {conversation[3]}\n")
-            else:
-                self.display_message("Therapy ChatBot: No saved conversation logs found for this user.")
-
-
-    def clear_conversation(self):
-        """Clear the conversation history from the chat display."""
-        self.chat_display.delete(1.0, tk.END)
-
-
+    # Remaining methods remain unchanged...
     def display_message(self, message):
         """Display a message in the chat display."""
         self.chat_display.insert(tk.END, f"{message}\n")
@@ -284,11 +243,12 @@ class TherapyChatbot:
         """Update the conversation history."""
         self.previous_conversations.append((username, user_input, sender, response))
 
-
     def clear_input_field(self):
         """Clear the user input field."""
         self.input_entry.delete(0, tk.END)
-        
+
+
+
 
 if __name__ == "__main__":
     root = tk.Tk()
